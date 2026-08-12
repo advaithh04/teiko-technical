@@ -183,13 +183,12 @@ def run_part4(conn):
     proj_counts = baseline.groupby("project_id")["sample_id"].count().reset_index()
     proj_counts.columns = ["project", "sample_count"]
 
-    # Distinct subjects → responder / non-responder counts
-    subj_unique = baseline.drop_duplicates(subset="subject_id")
-    response_counts = subj_unique["response"].value_counts().reset_index()
+    # one row per subject (samples table has one baseline PBMC row per subject here)
+    unique_subjects = baseline.drop_duplicates(subset="subject_id")
+    response_counts = unique_subjects["response"].value_counts().reset_index()
     response_counts.columns = ["response", "subject_count"]
 
-    # Distinct subjects → sex counts
-    gender_counts = subj_unique["sex"].value_counts().reset_index()
+    gender_counts = unique_subjects["sex"].value_counts().reset_index()
     gender_counts.columns = ["sex", "subject_count"]
 
     # Average B cells: melanoma males, all sample/treatment types, time=0, responders
