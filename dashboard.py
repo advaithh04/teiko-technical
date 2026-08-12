@@ -381,11 +381,13 @@ def main():
     )
 
     if not os.path.exists(DB_PATH):
-        st.error(
-            f"Database `{DB_PATH}` not found. "
-            "Please run `make pipeline` first to initialize the database and run the analysis."
-        )
-        st.stop()
+        with st.spinner("Initializing database — this runs once and takes ~10 seconds..."):
+            import load_data
+            conn = sqlite3.connect(DB_PATH)
+            load_data.create_schema(conn)
+            load_data.load_csv(conn, load_data.CSV_PATH)
+            conn.close()
+        st.cache_data.clear()
 
     st.title("🧬 Immune Cell Population Analysis Dashboard")
     st.caption("Loblaw Bio Clinical Trial — Miraclib Immune Profiling")
