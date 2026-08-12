@@ -6,9 +6,7 @@ A data pipeline and interactive dashboard for analyzing how the drug candidate *
 
 ## Dashboard
 
-**Live dashboard:** [https://teiko-technical.streamlit.app](https://teiko-technical.streamlit.app)
-
-> To deploy: go to [share.streamlit.io](https://share.streamlit.io), connect GitHub repo `advaithh04/teiko-technical`, set main file to `dashboard.py`, and update this link with the generated URL.
+**Live dashboard:** [https://teiko-bio-analysis.streamlit.app](https://teiko-bio-analysis.streamlit.app)
 
 To run locally: `make dashboard`, then open `http://localhost:8501`
 
