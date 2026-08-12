@@ -244,7 +244,7 @@ def page_stats():
         shared_yaxes=False,
     )
 
-    colors = {"yes": "#4c9be8", "no": "#e8744c"}
+    colors = {"yes": "#2E86AB", "no": "#E84855"}
     resp_labels = {"yes": "Responder", "no": "Non-Responder"}
 
     for col_idx, pop in enumerate(POPULATIONS, start=1):
@@ -336,7 +336,7 @@ def page_subset():
         fig_resp = px.pie(
             resp_counts, names="Response", values="Subject Count",
             color="Response",
-            color_discrete_map={"yes": "#4c9be8", "no": "#e8744c"},
+            color_discrete_map={"yes": "#2E86AB", "no": "#E84855"},
             title="Responders vs Non-Responders",
         )
         st.plotly_chart(fig_resp, use_container_width=True)
