@@ -1,62 +1,58 @@
-# Immune Cell Population Analysis — Loblaw Bio Clinical Trial
+# Immune Cell Population Analysis — Loblaw Bio
 
-A data pipeline and interactive dashboard for analyzing how the drug candidate **miraclib** affects immune cell populations across a clinical trial cohort.
-
----
-
-## Dashboard
-
-**Live dashboard:** [https://teiko-bio-analysis.streamlit.app](https://teiko-bio-analysis.streamlit.app)
-
-To run locally: `make dashboard`, then open `http://localhost:8501`
+This project analyzes immune cell population data from a clinical trial of miraclib. It covers loading the data into a relational database, computing cell population frequencies, running statistical comparisons between responders and non-responders, and exploring baseline subsets — all wrapped in an interactive dashboard.
 
 ---
 
-## Quickstart (GitHub Codespaces or local)
+## Live Dashboard
+
+[https://teiko-bio-analysis.streamlit.app](https://teiko-bio-analysis.streamlit.app)
+
+Or run it locally with `make dashboard` and go to `http://localhost:8501`.
+
+---
+
+## How to Run
+
+Tested on Python 3.10+. Works out of the box in GitHub Codespaces.
 
 ```bash
-make setup      # install all Python dependencies
-make pipeline   # initialize database, load data, run full analysis → outputs/
-make dashboard  # start the interactive Streamlit dashboard
+make setup       # installs dependencies from requirements.txt
+make pipeline    # builds the database, loads the CSV, runs all analysis
+make dashboard   # starts the Streamlit dashboard
 ```
 
-No arguments, no manual steps. Run the three commands in order.
-**Requirements:** Python 3.10+. All dependencies are installed by `make setup`.
+Run them in that order. No arguments needed anywhere.
 
 ---
 
-## Project Structure
+## File Structure
 
 ```
-teiko_technical/
-├── cell-count.csv           # raw input data
-├── load_data.py             # Part 1  — schema creation + CSV → SQLite
-├── analysis.py              # Parts 2–4 — analysis, saves all outputs
-├── dashboard.py             # interactive Streamlit dashboard (3 tabs)
+├── cell-count.csv        # the raw input data
+├── load_data.py          # sets up the SQLite schema and loads the CSV
+├── analysis.py           # runs parts 2–4, saves tables and plots to outputs/
+├── dashboard.py          # the Streamlit dashboard
 ├── requirements.txt
 ├── Makefile
 └── outputs/
-    ├── part2_summary_table.csv       # relative frequencies, all samples
-    ├── part3_boxplot.png             # boxplot: responders vs non-responders
-    ├── part3_stats_results.csv       # Mann-Whitney U results per population
-    ├── part4_baseline_samples.csv    # melanoma / miraclib / PBMC / time=0
-    ├── part4_project_counts.csv      # samples per project
-    ├── part4_response_counts.csv     # responders / non-responders count
-    ├── part4_gender_counts.csv       # males / females count
-    └── part4_bcell_average.txt       # avg B cell count (Part 4 final answer)
+    ├── part2_summary_table.csv
+    ├── part3_boxplot.png
+    ├── part3_stats_results.csv
+    ├── part4_baseline_samples.csv
+    ├── part4_project_counts.csv
+    ├── part4_response_counts.csv
+    ├── part4_gender_counts.csv
+    └── part4_bcell_average.txt
 ```
 
 ---
 
-## Code Design
+## Why I Structured It This Way
 
-**`load_data.py`** is self-contained. Running `python load_data.py` from the repo root creates `cell_counts.db` and ingests every row of `cell-count.csv`. No CLI arguments required.
+I kept three separate scripts instead of one big file because each piece has a different job. `load_data.py` only cares about getting data into the database correctly. `analysis.py` runs all the actual analysis and saves outputs you can share or reference later — PNGs, CSVs, printed results. The dashboard reads directly from the database at runtime so it always reflects the current state, not a stale cached file.
 
-**`analysis.py`** organizes each part (2, 3, 4) as separate functions with a `main()` guard. It queries the database, writes output files to `outputs/`, and prints a summary to stdout. The function structure means `dashboard.py` can reuse query logic without re-running the script.
-
-**`dashboard.py`** queries SQLite directly at runtime using `@st.cache_data` to avoid redundant queries. It does not depend on pre-computed CSVs, so it always reflects the current database state. Three tabs map to the three analysis parts, with Plotly charts and interactive sidebar filters.
-
-This separation keeps each file focused: `load_data.py` owns ingest, `analysis.py` owns reproducible static output, and `dashboard.py` owns interactivity.
+The dashboard auto-initializes the database if it doesn't find one, which is what makes it work on Streamlit Cloud without needing to run the pipeline manually first.
 
 ---
 
@@ -69,64 +65,40 @@ samples     (sample_id PK, subject_id FK, sample_type, time_from_treatment_start
 cell_counts (id PK, sample_id FK, population TEXT, count INTEGER)
 ```
 
-### Rationale
+### Design decisions
 
-A normalized four-table design eliminates redundancy and makes each concept independently queryable.
+I went with a normalized four-table design. The main thing I wanted to avoid was repeating patient-level information (like treatment and response) across every sample row — those are facts about the subject, not the sample, so they live in the subjects table.
 
-- **`projects`** — one row per project. Cross-project queries join cleanly; adding a new project is one INSERT with no schema change.
-- **`subjects`** — patient demographics and clinical attributes stored once. `treatment` and `response` are patient-level facts and should not be duplicated across every sample or time-point.
-- **`samples`** — one row per biological sample collection event. Multiple time-point samples per patient are separate rows, keeping the table normalized.
-- **`cell_counts`** — stored in **long (tidy) format**: one row per (sample, population) pair rather than one column per population. This is the most important design decision (see below).
+For `cell_counts` I stored the data in long format — one row per (sample, population) pair — instead of five separate columns. This felt like the right call because:
 
-### Why long format for `cell_counts`?
+- You can add a new cell population without touching the schema
+- Filtering and aggregating by population is just a `WHERE` clause
+- The wide format would need unpivoting in code every time you want to compare across populations
 
-| Concern | Wide (one column per population) | Long (one row per population) |
-|---|---|---|
-| Add a new cell type | `ALTER TABLE` + re-ingest | INSERT new rows, no schema change |
-| Query one population | Parse all columns | `WHERE population = 'b_cell'` |
-| Aggregate across populations | Unpivot in application code | Native `GROUP BY` |
-| Sparse data | Wastes space on NULLs | Stores only what exists |
+I added indexes on `sample_id`, `population`, `condition`, and `treatment` since those are the columns everything filters on.
 
-### Scalability
+### How it scales
 
-| Scale | How the schema handles it |
-|---|---|
-| Hundreds of projects | `project_id` FK keeps project metadata centralized; new projects never touch other tables |
-| Thousands of samples | `cell_counts` grows linearly (n_samples × n_populations); indexed on `sample_id` and `population` |
-| New analytic requirements | Long format supports any population-level `GROUP BY` without schema changes; new metadata fields are new columns on `subjects` or `samples` |
-| New sample types / time-points | `sample_type` and `time_from_treatment_start` on `samples` allow fine-grained filtering without separate tables |
+If the trial grows to hundreds of projects and thousands of samples, the structure holds up. New projects are just new rows in `projects`. New samples are new rows in `samples` and `cell_counts`. The long format in `cell_counts` means the table grows linearly with samples × populations, and the indexes keep aggregation queries fast.
+
+If you needed to add new types of analytics — say, comparing across sample types or adding new metadata fields — you'd just add columns to `subjects` or `samples` rather than restructuring anything.
 
 ---
 
-## Analysis Results
+## Results Summary
 
-### Part 2 — Data Overview
-52,500 rows (10,500 samples × 5 populations). Each row reports the relative frequency (%) of one cell population within one sample.
+### Part 2
+Built a summary table with relative frequencies for all 10,500 samples across 5 populations (52,500 rows total). Each row has sample id, total count, population name, raw count, and percentage.
 
-### Part 3 — Statistical Analysis
-Filter: melanoma patients, miraclib treatment, PBMC samples only.
-Test: **Mann-Whitney U** (two-sided, α = 0.05) — non-parametric, robust to non-normal distributions common in small clinical cohorts.
+### Part 3
+Filtered to melanoma patients on miraclib, PBMC samples only. Compared relative frequencies between responders and non-responders using the Mann-Whitney U test (two-sided, α = 0.05). I chose Mann-Whitney because the sample sizes per group aren't huge and I didn't want to assume normality.
 
-| Population | Mean % (Resp.) | Mean % (Non-Resp.) | p-value | Significant |
-|---|---|---|---|---|
-| B Cell | 9.80 | 10.00 | 0.056 | No |
-| CD8 T Cell | 24.88 | 24.94 | 0.639 | No |
-| **CD4 T Cell** | **30.54** | **29.90** | **0.013** | **Yes** |
-| NK Cell | 14.84 | 15.07 | 0.121 | No |
-| Monocyte | 19.94 | 20.08 | 0.163 | No |
+**CD4 T cell was the only significant result (p = 0.013)** — responders had slightly higher CD4 T cell frequencies on average. The other four populations didn't reach significance.
 
-**CD4 T cell frequency is significantly higher in responders (p = 0.013)**, supporting its candidacy as a predictive biomarker for miraclib response in melanoma.
+### Part 4
+Filtered to melanoma PBMC samples at baseline (time = 0) on miraclib:
 
-### Part 4 — Subset Analysis
-Melanoma PBMC miraclib samples at baseline (time = 0):
-
-| Metric | Value |
-|---|---|
-| Total baseline samples | 656 |
-| Samples — prj1 | 384 |
-| Samples — prj3 | 272 |
-| Responders (subjects) | 331 |
-| Non-responders (subjects) | 325 |
-| Male subjects | 344 |
-| Female subjects | 312 |
-| **Avg B cells — melanoma males, all types, time=0, responders** | **10206.15** |
+- 656 total samples — 384 from prj1, 272 from prj3
+- 331 responders, 325 non-responders
+- 344 male subjects, 312 female subjects
+- Average B cell count for melanoma males (all sample/treatment types, time = 0, responders): **10206.15**
